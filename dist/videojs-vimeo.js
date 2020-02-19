@@ -1,17 +1,17 @@
 /**
  * videojs-vimeo
  * @version 3.0.1
- * @copyright 2018 Benoit Tremblay <trembl.ben@gmail.com>
+ * @copyright 2020 Benoit Tremblay <trembl.ben@gmail.com>
  * @license MIT
  */
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.videojsVimeo = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
-(function (global){
-/*! @vimeo/player v2.6.3 | (c) 2018 Vimeo | MIT License | https://github.com/vimeo/player.js */
+(function (global,setImmediate){
+/*! @vimeo/player v2.10.0 | (c) 2019 Vimeo | MIT License | https://github.com/vimeo/player.js */
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
   typeof define === 'function' && define.amd ? define(factory) :
-  (global.Vimeo = global.Vimeo || {}, global.Vimeo.Player = factory());
-}(this, (function () { 'use strict';
+  (global = global || self, (global.Vimeo = global.Vimeo || {}, global.Vimeo.Player = factory()));
+}(this, function () { 'use strict';
 
   function _classCallCheck(instance, Constructor) {
     if (!(instance instanceof Constructor)) {
@@ -69,7 +69,7 @@
    */
 
   function isDomElement(element) {
-    return element instanceof window.HTMLElement;
+    return Boolean(element && element.nodeType === 1 && 'nodeName' in element && element.ownerDocument && element.ownerDocument.defaultView);
   }
   /**
    * Check to see whether the value is a number.
@@ -92,7 +92,7 @@
    */
 
   function isVimeoUrl(url) {
-    return /^(https?:)?\/\/((player|www).)?vimeo.com(?=$|\/)/.test(url);
+    return /^(https?:)?\/\/((player|www)\.)?vimeo\.com(?=$|\/)/.test(url);
   }
   /**
    * Get the Vimeo URL from an element.
@@ -283,10 +283,6 @@
 
     if (module.exports) {
       module.exports = context[name];
-    } else if (typeof undefined == "function" && undefined.amd) {
-      undefined(function $AMD$() {
-        return context[name];
-      });
     }
   })("Promise", typeof commonjsGlobal != "undefined" ? commonjsGlobal : commonjsGlobal, function DEF() {
 
@@ -735,7 +731,7 @@
   /**
    * @module lib/embed
    */
-  var oEmbedParameters = ['autopause', 'autoplay', 'background', 'byline', 'color', 'height', 'id', 'loop', 'maxheight', 'maxwidth', 'muted', 'playsinline', 'portrait', 'responsive', 'speed', 'title', 'transparent', 'url', 'width'];
+  var oEmbedParameters = ['autopause', 'autoplay', 'background', 'byline', 'color', 'controls', 'dnt', 'height', 'id', 'loop', 'maxheight', 'maxwidth', 'muted', 'playsinline', 'portrait', 'responsive', 'speed', 'texttrack', 'title', 'transparent', 'url', 'width'];
   /**
    * Get the 'data-vimeo'-prefixed attributes from an element as an object.
    *
@@ -798,7 +794,7 @@
         throw new TypeError("\u201C".concat(videoUrl, "\u201D is not a vimeo.com url."));
       }
 
-      var url = "https://vimeo.com/api/oembed.json?url=".concat(encodeURIComponent(videoUrl), "&domain=").concat(window.location.hostname);
+      var url = "https://vimeo.com/api/oembed.json?url=".concat(encodeURIComponent(videoUrl));
 
       for (var param in params) {
         if (params.hasOwnProperty(param)) {
@@ -888,6 +884,13 @@
   function resizeEmbeds() {
     var parent = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : document;
 
+    // Prevent execution if users include the player.js script multiple times.
+    if (window.VimeoPlayerResizeEmbeds_) {
+      return;
+    }
+
+    window.VimeoPlayerResizeEmbeds_ = true;
+
     var onMessage = function onMessage(event) {
       if (!isVimeoUrl(event.origin)) {
         return;
@@ -932,7 +935,13 @@
 
   function parseMessageData(data) {
     if (typeof data === 'string') {
-      data = JSON.parse(data);
+      try {
+        data = JSON.parse(data);
+      } catch (error) {
+        // If the message cannot be parsed, throw the error as a warning
+        console.warn(error);
+        return {};
+      }
     }
 
     return data;
@@ -1054,8 +1063,9 @@
 
       if (!isDomElement(element)) {
         throw new TypeError('You must pass either a valid element or a valid id.');
-      } // Already initialized an embed in this div, so grab the iframe
+      }
 
+      var win = element.ownerDocument.defaultView; // Already initialized an embed in this div, so grab the iframe
 
       if (element.nodeName !== 'IFRAME') {
         var iframe = element.querySelector('iframe');
@@ -1088,8 +1098,18 @@
           }
 
           var data = parseMessageData(event.data);
-          var isReadyEvent = 'event' in data && data.event === 'ready';
-          var isPingResponse = 'method' in data && data.method === 'ping';
+          var isError = data && data.event === 'error';
+          var isReadyError = isError && data.data && data.data.method === 'ready';
+
+          if (isReadyError) {
+            var error = new Error(data.data.message);
+            error.name = data.data.name;
+            reject(error);
+            return;
+          }
+
+          var isReadyEvent = data && data.event === 'ready';
+          var isPingResponse = data && data.method === 'ping';
 
           if (isReadyEvent || isPingResponse) {
             _this.element.setAttribute('data-ready', 'true');
@@ -1101,10 +1121,10 @@
           processData(_this, data);
         };
 
-        if (window.addEventListener) {
-          window.addEventListener('message', onMessage, false);
-        } else if (window.attachEvent) {
-          window.attachEvent('onmessage', onMessage);
+        if (win.addEventListener) {
+          win.addEventListener('message', onMessage, false);
+        } else if (win.attachEvent) {
+          win.attachEvent('onmessage', onMessage);
         }
 
         if (_this.element.nodeName !== 'IFRAME') {
@@ -1119,9 +1139,7 @@
             swapCallbacks(element, iframe);
             playerMap.set(_this.element, _this);
             return data;
-          }).catch(function (error) {
-            return reject(error);
-          });
+          }).catch(reject);
         }
       }); // Store a copy of this Player in the map
 
@@ -1160,9 +1178,7 @@
               reject: reject
             });
             postMessage(_this2, name, args);
-          }).catch(function (error) {
-            reject(error);
-          });
+          }).catch(reject);
         });
       }
       /**
@@ -1188,7 +1204,7 @@
               reject: reject
             });
             postMessage(_this3, name);
-          });
+          }).catch(reject);
         });
       }
       /**
@@ -1204,22 +1220,23 @@
       value: function set(name, value) {
         var _this4 = this;
 
-        return npo_src.resolve(value).then(function (val) {
+        return new npo_src(function (resolve, reject) {
           name = getMethodName(name, 'set');
 
-          if (val === undefined || val === null) {
+          if (value === undefined || value === null) {
             throw new TypeError('There must be a value to set.');
-          }
+          } // We are storing the resolve/reject handlers to call later, so we
+          // can’t return here.
+          // eslint-disable-next-line promise/always-return
+
 
           return _this4.ready().then(function () {
-            return new npo_src(function (resolve, reject) {
-              storeCallback(_this4, name, {
-                resolve: resolve,
-                reject: reject
-              });
-              postMessage(_this4, name, val);
+            storeCallback(_this4, name, {
+              resolve: resolve,
+              reject: reject
             });
-          });
+            postMessage(_this4, name, value);
+          }).catch(reject);
         });
       }
       /**
@@ -1299,14 +1316,14 @@
        * the video is successfully loaded, or it will be rejected if it could
        * not be loaded.
        *
-       * @param {number} id The id of the video.
+       * @param {number|object} options The id of the video or an object with embed options.
        * @return {LoadVideoPromise}
        */
 
     }, {
       key: "loadVideo",
-      value: function loadVideo(id) {
-        return this.callMethod('loadVideo', id);
+      value: function loadVideo(options) {
+        return this.callMethod('loadVideo', options);
       }
       /**
        * A promise to perform an action when the Player is ready.
@@ -1526,8 +1543,8 @@
             _this5._originalElement.removeAttribute('data-vimeo-initialized');
           }
 
-          if (_this5.element && _this5.element.nodeName === 'IFRAME') {
-            _this5.element.remove();
+          if (_this5.element && _this5.element.nodeName === 'IFRAME' && _this5.element.parentNode) {
+            _this5.element.parentNode.removeChild(_this5.element);
           }
 
           resolve();
@@ -1578,6 +1595,24 @@
       key: "setAutopause",
       value: function setAutopause(autopause) {
         return this.set('autopause', autopause);
+      }
+      /**
+       * A promise to get the buffered property of the video.
+       *
+       * @promise GetBufferedPromise
+       * @fulfill {Array} Buffered Timeranges converted to an Array.
+       */
+
+      /**
+       * Get the buffered property of the video.
+       *
+       * @return {GetBufferedPromise}
+       */
+
+    }, {
+      key: "getBuffered",
+      value: function getBuffered() {
+        return this.get('buffered');
       }
       /**
        * A promise to get the color of the player.
@@ -1775,6 +1810,44 @@
         return this.set('loop', loop);
       }
       /**
+       * A promise to set the muted state of the player.
+       *
+       * @promise SetMutedPromise
+       * @fulfill {boolean} The muted state that was set.
+       */
+
+      /**
+       * Set the muted state of the player. When set to `true`, the player
+       * volume will be muted.
+       *
+       * @param {boolean} muted
+       * @return {SetMutedPromise}
+       */
+
+    }, {
+      key: "setMuted",
+      value: function setMuted(muted) {
+        return this.set('muted', muted);
+      }
+      /**
+       * A promise to get the muted state of the player.
+       *
+       * @promise GetMutedPromise
+       * @fulfill {boolean} Whether or not the player is muted.
+       */
+
+      /**
+       * Get the muted state of the player.
+       *
+       * @return {GetMutedPromise}
+       */
+
+    }, {
+      key: "getMuted",
+      value: function getMuted() {
+        return this.get('muted');
+      }
+      /**
        * A promise to get the paused state of the player.
        *
        * @promise GetLoopPromise
@@ -1831,6 +1904,60 @@
       key: "setPlaybackRate",
       value: function setPlaybackRate(playbackRate) {
         return this.set('playbackRate', playbackRate);
+      }
+      /**
+       * A promise to get the played property of the video.
+       *
+       * @promise GetPlayedPromise
+       * @fulfill {Array} Played Timeranges converted to an Array.
+       */
+
+      /**
+       * Get the played property of the video.
+       *
+       * @return {GetPlayedPromise}
+       */
+
+    }, {
+      key: "getPlayed",
+      value: function getPlayed() {
+        return this.get('played');
+      }
+      /**
+       * A promise to get the seekable property of the video.
+       *
+       * @promise GetSeekablePromise
+       * @fulfill {Array} Seekable Timeranges converted to an Array.
+       */
+
+      /**
+       * Get the seekable property of the video.
+       *
+       * @return {GetSeekablePromise}
+       */
+
+    }, {
+      key: "getSeekable",
+      value: function getSeekable() {
+        return this.get('seekable');
+      }
+      /**
+       * A promise to get the seeking property of the player.
+       *
+       * @promise GetSeekingPromise
+       * @fulfill {boolean} Whether or not the player is currently seeking.
+       */
+
+      /**
+       * Get if the player is currently seeking.
+       *
+       * @return {GetSeekingPromise}
+       */
+
+    }, {
+      key: "getSeeking",
+      value: function getSeeking() {
+        return this.get('seeking');
       }
       /**
        * A promise to get the text tracks of a video.
@@ -2011,21 +2138,285 @@
 
     return Player;
   }(); // Setup embed only if this is not a node environment
-  // and if there is no existing Vimeo Player object
 
 
-  if (!isNode && window.Vimeo && !window.Vimeo.Player) {
+  if (!isNode) {
     initializeEmbeds();
     resizeEmbeds();
   }
 
   return Player;
 
-})));
+}));
 
 
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],2:[function(require,module,exports){
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("timers").setImmediate)
+},{"timers":2}],2:[function(require,module,exports){
+(function (setImmediate,clearImmediate){
+var nextTick = require('process/browser.js').nextTick;
+var apply = Function.prototype.apply;
+var slice = Array.prototype.slice;
+var immediateIds = {};
+var nextImmediateId = 0;
+
+// DOM APIs, for completeness
+
+exports.setTimeout = function() {
+  return new Timeout(apply.call(setTimeout, window, arguments), clearTimeout);
+};
+exports.setInterval = function() {
+  return new Timeout(apply.call(setInterval, window, arguments), clearInterval);
+};
+exports.clearTimeout =
+exports.clearInterval = function(timeout) { timeout.close(); };
+
+function Timeout(id, clearFn) {
+  this._id = id;
+  this._clearFn = clearFn;
+}
+Timeout.prototype.unref = Timeout.prototype.ref = function() {};
+Timeout.prototype.close = function() {
+  this._clearFn.call(window, this._id);
+};
+
+// Does not start the time, just sets up the members needed.
+exports.enroll = function(item, msecs) {
+  clearTimeout(item._idleTimeoutId);
+  item._idleTimeout = msecs;
+};
+
+exports.unenroll = function(item) {
+  clearTimeout(item._idleTimeoutId);
+  item._idleTimeout = -1;
+};
+
+exports._unrefActive = exports.active = function(item) {
+  clearTimeout(item._idleTimeoutId);
+
+  var msecs = item._idleTimeout;
+  if (msecs >= 0) {
+    item._idleTimeoutId = setTimeout(function onTimeout() {
+      if (item._onTimeout)
+        item._onTimeout();
+    }, msecs);
+  }
+};
+
+// That's not how node.js implements it but the exposed api is the same.
+exports.setImmediate = typeof setImmediate === "function" ? setImmediate : function(fn) {
+  var id = nextImmediateId++;
+  var args = arguments.length < 2 ? false : slice.call(arguments, 1);
+
+  immediateIds[id] = true;
+
+  nextTick(function onNextTick() {
+    if (immediateIds[id]) {
+      // fn.call() is faster so we optimize for the common use-case
+      // @see http://jsperf.com/call-apply-segu
+      if (args) {
+        fn.apply(null, args);
+      } else {
+        fn.call(null);
+      }
+      // Prevent ids from leaking
+      exports.clearImmediate(id);
+    }
+  });
+
+  return id;
+};
+
+exports.clearImmediate = typeof clearImmediate === "function" ? clearImmediate : function(id) {
+  delete immediateIds[id];
+};
+}).call(this,require("timers").setImmediate,require("timers").clearImmediate)
+},{"process/browser.js":3,"timers":2}],3:[function(require,module,exports){
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}],4:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -2338,5 +2729,5 @@ Vimeo.VERSION = '0.0.1';
 
 exports.default = Vimeo;
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"@vimeo/player":1}]},{},[2])(2)
+},{"@vimeo/player":1}]},{},[4])(4)
 });
